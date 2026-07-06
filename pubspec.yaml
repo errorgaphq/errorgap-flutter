@@ -1,9 +1,11 @@
 name: errorgap
-description: Flutter notifier for Errorgap error tracking.
+description: >-
+  Flutter notifier for Errorgap error tracking — reports uncaught Flutter
+  and Dart errors with backtraces and device context to your Errorgap project.
 version: 0.1.0
-homepage: https://gitlab.jgrubbs.net/jGRUBBS/errorgap-flutter
-repository: https://gitlab.jgrubbs.net/jGRUBBS/errorgap-flutter
-issue_tracker: https://gitlab.jgrubbs.net/jGRUBBS/errorgap-flutter/-/issues
+homepage: https://github.com/errorgaphq/errorgap-flutter
+repository: https://github.com/errorgaphq/errorgap-flutter
+issue_tracker: https://github.com/errorgaphq/errorgap-flutter/issues
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
