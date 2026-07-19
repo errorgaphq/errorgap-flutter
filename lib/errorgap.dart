@@ -25,13 +25,18 @@ library errorgap;
 
 import 'dart:async';
 
+import 'src/apm.dart';
 import 'src/client.dart';
 import 'src/configuration.dart';
+import 'src/logger.dart';
 import 'src/notice.dart';
 
+export 'src/apm.dart'
+    show ErrorgapSpan, ErrorgapSpanCollector, ErrorgapTransaction, normalizeSql;
 export 'src/client.dart' show DeliveryResult, ErrorgapClient;
 export 'src/configuration.dart' show ErrorgapConfiguration;
-export 'src/notice.dart' show NoticeOptions;
+export 'src/logger.dart' show ErrorgapLogger;
+export 'src/notice.dart' show ErrorgapCausedBy, NoticeOptions;
 export 'src/version.dart' show errorgapVersion;
 
 class Errorgap {
@@ -84,6 +89,43 @@ class Errorgap {
     );
   }
 
+  static Future<DeliveryResult> notifyTransaction(
+    ErrorgapTransaction transaction, {
+    bool sync = false,
+  }) {
+    final c = _client;
+    if (c == null) return _notInitialized();
+    return c.notifyTransaction(transaction, sync: sync);
+  }
+
+  static Future<DeliveryResult> notifyLog(
+    String message, {
+    String level = 'info',
+    String? source,
+    bool sync = false,
+  }) {
+    final c = _client;
+    if (c == null) return _notInitialized();
+    return c.notifyLog(message, level: level, source: source, sync: sync);
+  }
+
+  static ErrorgapLogger? logger({String? source}) {
+    final c = _client;
+    return c == null ? null : ErrorgapLogger(c, source: source);
+  }
+
+  static Future<T> trackJob<T>(
+    String jobClass,
+    FutureOr<T> Function(ErrorgapSpanCollector collector) operation, {
+    String queue = 'default',
+  }) {
+    final c = _client;
+    if (c == null) {
+      return Future<T>.error(StateError('Errorgap not initialized'));
+    }
+    return c.trackJob(jobClass, operation, queue: queue);
+  }
+
   static Future<void> flush({Duration timeout = const Duration(seconds: 5)}) {
     return _client?.flush(timeout: timeout) ?? Future<void>.value();
   }
@@ -94,4 +136,9 @@ class Errorgap {
     _client = null;
     return c?.shutdown(timeout: timeout) ?? Future<void>.value();
   }
+
+  static Future<DeliveryResult> _notInitialized() =>
+      Future<DeliveryResult>.value(
+        DeliveryResult(error: StateError('Errorgap not initialized')),
+      );
 }

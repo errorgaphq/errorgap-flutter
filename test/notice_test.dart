@@ -2,6 +2,23 @@ import 'package:errorgap/errorgap.dart';
 import 'package:errorgap/src/notice.dart' as nt;
 import 'package:test/test.dart';
 
+class CheckoutFailure implements Exception, ErrorgapCausedBy {
+  CheckoutFailure(this.message, this.cause, this.causeStackTrace);
+
+  final String message;
+  final Object cause;
+  final StackTrace causeStackTrace;
+
+  @override
+  Object get errorgapCause => cause;
+
+  @override
+  Object get errorgapCauseStackTrace => causeStackTrace;
+
+  @override
+  String toString() => message;
+}
+
 void main() {
   ErrorgapConfiguration cfg() => ErrorgapConfiguration(
         projectSlug: 'demo',
@@ -81,6 +98,43 @@ void main() {
       );
       final context = notice['context']! as Map<String, Object?>;
       expect(context['is_fatal'], isTrue);
+    });
+
+    test('appends frames from explicit cause chains', () {
+      final cause = StateError('database unavailable');
+      final error = CheckoutFailure(
+        'checkout failed',
+        cause,
+        StackTrace.fromString(
+          '#0      Database.load (package:demo/database.dart:20:4)',
+        ),
+      );
+      final notice = nt.buildNotice(
+        error,
+        cfg(),
+        NoticeOptions(
+          stackTrace: StackTrace.fromString(
+            '#0      Checkout.run (package:demo/checkout.dart:10:2)',
+          ),
+        ),
+      );
+      final errors = notice['errors']! as List<Map<String, Object?>>;
+      final frames = errors.single['backtrace']! as List<Map<String, Object?>>;
+      expect(frames, hasLength(2));
+      expect(frames[0]['function'], 'Checkout.run');
+      expect(frames[1]['function'], 'Database.load');
+      expect(frames[1]['index'], 1);
+    });
+
+    test('includes the configured root directory', () {
+      final config = cfg()..rootDirectory = '/app';
+      final notice = nt.buildNotice(
+        StateError('x'),
+        config,
+        NoticeOptions(),
+      );
+      final context = notice['context']! as Map<String, Object?>;
+      expect(context['root_directory'], '/app');
     });
   });
 }

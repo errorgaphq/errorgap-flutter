@@ -38,5 +38,17 @@ void main() {
       }, defaults);
       expect(out['Authorization'], '[FILTERED]');
     });
+
+    test('recurses into maps nested in lists', () {
+      final out = filterParams(<String, Object?>{
+        'items': <Object?>[
+          <String, Object?>{'name': 'safe', 'access_token': 'secret'},
+        ],
+      }, defaults);
+      final items = out['items']! as List<Object?>;
+      final item = items.single! as Map<String, Object?>;
+      expect(item['name'], 'safe');
+      expect(item['access_token'], '[FILTERED]');
+    });
   });
 }
