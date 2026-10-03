@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'apm.dart';
 import 'configuration.dart';
 import 'notice.dart';
+import 'transaction_context.dart';
 import 'version.dart';
 
 class DeliveryResult {
@@ -60,7 +61,7 @@ class ErrorgapClient {
     final notice = buildNotice(
       error,
       _configuration,
-      options ?? NoticeOptions(),
+      _withTransaction(options ?? NoticeOptions()),
     );
     return _submit('notices', notice, sync: sync);
   }
@@ -118,13 +119,18 @@ class ErrorgapClient {
     FutureOr<T> Function(ErrorgapSpanCollector collector) operation, {
     String queue = 'default',
   }) async {
+    final transactionId = newErrorgapTransactionId();
     final occurredAt = DateTime.now().toUtc();
     final stopwatch = Stopwatch()..start();
     final collector = ErrorgapSpanCollector();
     try {
-      final value = await Future<T>.sync(() => operation(collector));
+      final value = await withErrorgapTransaction(
+        transactionId,
+        () => Future<T>.sync(() => operation(collector)),
+      );
       stopwatch.stop();
       await notifyTransaction(ErrorgapTransaction(
+        id: transactionId,
         kind: 'job',
         statusCode: 200,
         durationMs: stopwatch.elapsedMicroseconds / 1000,
@@ -144,11 +150,13 @@ class ErrorgapClient {
             'source': 'errorgap-flutter job',
             'component': 'dart.job',
             'action': jobClass,
+            'transaction_id': transactionId,
           },
           environment: <String, Object?>{'queue': queue},
         ),
       );
       await notifyTransaction(ErrorgapTransaction(
+        id: transactionId,
         kind: 'job',
         statusCode: 500,
         durationMs: stopwatch.elapsedMicroseconds / 1000,
@@ -295,4 +303,21 @@ int logLevelRank(String level) {
     default:
       return 20;
   }
+}
+
+/// The transaction this error was raised in ([withErrorgapTransaction]),
+/// unless the caller set one, so errorgap links the two.
+NoticeOptions _withTransaction(NoticeOptions options) {
+  final id = currentErrorgapTransactionId();
+  if (id == null || (options.context?.containsKey('transaction_id') ?? false)) {
+    return options;
+  }
+  return NoticeOptions(
+    context: <String, Object?>{...?options.context, 'transaction_id': id},
+    environment: options.environment,
+    session: options.session,
+    params: options.params,
+    stackTrace: options.stackTrace,
+    isFatal: options.isFatal,
+  );
 }

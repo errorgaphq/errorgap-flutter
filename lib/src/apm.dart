@@ -1,3 +1,5 @@
+import 'transaction_context.dart';
+
 class ErrorgapSpan {
   ErrorgapSpan({
     required this.kind,
@@ -57,6 +59,7 @@ class ErrorgapSpan {
 
 class ErrorgapTransaction {
   ErrorgapTransaction({
+    String? id,
     this.kind = 'web',
     this.method,
     this.path,
@@ -68,9 +71,13 @@ class ErrorgapTransaction {
     List<ErrorgapSpan>? spans,
     this.jobClass,
     this.queue,
-  })  : occurredAt = occurredAt ?? DateTime.now().toUtc(),
+  })  : id = id ?? newErrorgapTransactionId(),
+        occurredAt = occurredAt ?? DateTime.now().toUtc(),
         spans = spans ?? <ErrorgapSpan>[];
 
+  /// Links errors raised during this transaction to it; see
+  /// [withErrorgapTransaction].
+  final String id;
   final String kind;
   final String? method;
   final String? path;
@@ -84,6 +91,7 @@ class ErrorgapTransaction {
   final String? queue;
 
   Map<String, Object?> toJson(String defaultEnvironment) => <String, Object?>{
+        'id': id,
         'kind': kind,
         if (method != null) 'method': method,
         if (path != null) 'path': path,

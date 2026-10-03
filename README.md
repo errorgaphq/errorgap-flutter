@@ -15,7 +15,7 @@ Requires Dart 3.0+.
 
 ```yaml
 dependencies:
-  errorgap: ^0.2.0
+  errorgap: ^0.3.0
 ```
 
 ## Configure
@@ -124,6 +124,21 @@ await Errorgap.trackJob('ReceiptJob', (spans) async {
 `trackJob` reports a failed operation as both an error and a failed job
 transaction, then rethrows it to preserve application behavior. SQL literals
 are normalized to `?` so equivalent queries aggregate together.
+
+### Link errors to their transaction
+
+Every `ErrorgapTransaction` has an `id`. Errors reported inside
+`withErrorgapTransaction(id, () async { ... })` — and a failing `trackJob` —
+carry it as `context.transaction_id`, so errorgap shows the error an
+interaction raised on its trace:
+
+```dart
+final transaction = ErrorgapTransaction(path: '/checkout', durationMs: 0);
+await withErrorgapTransaction(transaction.id, () => submitOrder());
+```
+
+The id is a zone value: async work started inside keeps it, and concurrent
+work never shares it.
 
 ## Structured logs
 

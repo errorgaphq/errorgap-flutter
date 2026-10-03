@@ -37,6 +37,11 @@ export 'src/client.dart' show DeliveryResult, ErrorgapClient;
 export 'src/configuration.dart' show ErrorgapConfiguration;
 export 'src/logger.dart' show ErrorgapLogger;
 export 'src/notice.dart' show ErrorgapCausedBy, NoticeOptions;
+export 'src/transaction_context.dart'
+    show
+        currentErrorgapTransactionId,
+        newErrorgapTransactionId,
+        withErrorgapTransaction;
 export 'src/version.dart' show errorgapVersion;
 
 class Errorgap {
