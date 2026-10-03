@@ -246,5 +246,66 @@ void main() {
       expect(transaction['spans'], isNotEmpty);
       await client.shutdown();
     });
+
+    test('errors inside a transaction carry its id', () async {
+      final client = ErrorgapClient(ErrorgapConfiguration(
+        endpoint: ingestor.endpoint,
+        projectSlug: 'demo',
+        apiKey: 'egp_test',
+        async: false,
+        apmEnabled: true,
+        environment: 'production',
+      ));
+      final transaction =
+          ErrorgapTransaction(path: '/checkout', durationMs: 12);
+      await withErrorgapTransaction(transaction.id, () async {
+        await Future<void>.delayed(Duration.zero);
+        await client.notify(StateError('declined'));
+      });
+      await client.notify(StateError('after'));
+      await client.notifyTransaction(transaction);
+
+      Map<String, Object?> contextOf(int i) =>
+          ingestor.requests[i].body!['context']! as Map<String, Object?>;
+      expect(contextOf(0)['transaction_id'], transaction.id);
+      expect(contextOf(1).containsKey('transaction_id'), isFalse);
+      expect(ingestor.requests[2].body!['id'], transaction.id);
+      expect(
+          transaction.id,
+          matches(RegExp(
+              r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')));
+      expect(currentErrorgapTransactionId(), isNull);
+      await client.shutdown();
+    });
+
+    test("a failed job's error carries the job's id", () async {
+      final client = ErrorgapClient(ErrorgapConfiguration(
+        endpoint: ingestor.endpoint,
+        projectSlug: 'demo',
+        apiKey: 'egp_test',
+        async: false,
+        apmEnabled: true,
+        environment: 'production',
+      ));
+      String? seen;
+      await expectLater(
+        client.trackJob<void>('ReceiptJob', (_) async {
+          await Future<void>.delayed(Duration.zero);
+          seen = currentErrorgapTransactionId();
+          throw StateError('smtp down');
+        }),
+        throwsStateError,
+      );
+      final notice =
+          ingestor.requests.firstWhere((r) => r.path.endsWith('/notices'));
+      final transaction =
+          ingestor.requests.firstWhere((r) => r.path.endsWith('/transactions'));
+      expect(seen, isNotNull);
+      expect(
+          (notice.body!['context']! as Map<String, Object?>)['transaction_id'],
+          seen);
+      expect(transaction.body!['id'], seen);
+      await client.shutdown();
+    });
   });
 }
