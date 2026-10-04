@@ -15,7 +15,7 @@ Requires Dart 3.0+.
 
 ```yaml
 dependencies:
-  errorgap: ^0.3.0
+  errorgap: ^0.4.0
 ```
 
 ## Configure
@@ -124,6 +124,29 @@ await Errorgap.trackJob('ReceiptJob', (spans) async {
 `trackJob` reports a failed operation as both an error and a failed job
 transaction, then rethrows it to preserve application behavior. SQL literals
 are normalized to `?` so equivalent queries aggregate together.
+
+### Link API calls to server traces
+
+Trace a call to your API and errorgap links it to the server request that
+answered it (when the server's errorgap SDK records the `x-errorgap-trace`
+header — Rails, Laravel, Express, Django, Spring and the rest do):
+
+```dart
+final spans = ErrorgapSpanCollector();
+final stopwatch = Stopwatch()..start();
+final response = await spans.traceCall('GET /api/orders/7',
+    (headers) => http.get(ordersUri, headers: headers));
+await client.notifyTransaction(ErrorgapTransaction(
+  path: 'OrderScreen',
+  durationMs: stopwatch.elapsedMicroseconds / 1000,
+  spans: spans.snapshot(),
+));
+```
+
+`traceCall` records an `http` span carrying the trace id it sent; the app's
+trace lists each traced call with a link to its server trace, and the server
+trace shows how long the app waited. For manual timing use
+`final call = spans.startCall(label)`, send `call.headers`, then `call.finish()`.
 
 ### Link errors to their transaction
 

@@ -32,7 +32,13 @@ import 'src/logger.dart';
 import 'src/notice.dart';
 
 export 'src/apm.dart'
-    show ErrorgapSpan, ErrorgapSpanCollector, ErrorgapTransaction, normalizeSql;
+    show
+        ErrorgapSpan,
+        ErrorgapSpanCollector,
+        ErrorgapTracedCall,
+        ErrorgapTransaction,
+        errorgapTraceHeader,
+        normalizeSql;
 export 'src/client.dart' show DeliveryResult, ErrorgapClient;
 export 'src/configuration.dart' show ErrorgapConfiguration;
 export 'src/logger.dart' show ErrorgapLogger;
