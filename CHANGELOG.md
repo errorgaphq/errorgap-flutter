@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 - 2026-10-04
+
+- `ErrorgapSpanCollector.traceCall` / `startCall` trace an API call: the
+  request gets an `x-errorgap-trace` header and its `http` span records the
+  same id, so errorgap links the call to the server request that answered it.
+
 ## 0.3.0 - 2026-10-03
 
 - Errors carry their APM transaction id: every `ErrorgapTransaction` has an
