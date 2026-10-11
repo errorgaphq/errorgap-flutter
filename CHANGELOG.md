@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 - 2026-10-11
+
+- Session replay: a timeline of each app session (app start, screens, failed
+  API calls, reported errors linked to their error group, backgrounding),
+  shown on error groups and incidents in Errorgap. Timeline only, no
+  screenshots. On by default in iOS and Android apps, and it records only what
+  the project's replay settings allow; `Errorgap.init(config, replay: false)`
+  turns it off. Record screens with `Errorgap.trackScreen`, the app lifecycle
+  with `Errorgap.appPaused` / `appResumed`, and failed calls with
+  `ErrorgapHttpClient`.
+
 ## 0.4.0 - 2026-10-04
 
 - `ErrorgapSpanCollector.traceCall` / `startCall` trace an API call: the
