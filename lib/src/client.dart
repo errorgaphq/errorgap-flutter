@@ -24,11 +24,19 @@ class DeliveryResult {
 }
 
 class _PendingDelivery {
-  _PendingDelivery(this.resource, this.payload);
+  _PendingDelivery(this.resource, this.payload, {this.onDelivered});
 
   final String resource;
   final Map<String, Object?> payload;
+
+  /// Told the result once the server has answered (session replay links the
+  /// error to the group the response names).
+  final void Function(DeliveryResult result)? onDelivered;
 }
+
+/// Told when an error is reported; returns what to call with its group id.
+typedef ErrorgapErrorObserver = void Function(String? groupId) Function(
+    String label);
 
 class ErrorgapClient {
   ErrorgapClient(this._configuration, {http.Client? httpClient})
@@ -44,6 +52,16 @@ class ErrorgapClient {
   int _inFlight = 0;
 
   ErrorgapConfiguration get configuration => _configuration;
+
+  /// The HTTP client the SDK sends with (session replay shares it).
+  http.Client get httpClient => _http;
+
+  ErrorgapErrorObserver? _errorObserver;
+
+  /// Session replay records each reported error, linked to its group.
+  void observeErrors(ErrorgapErrorObserver? observer) {
+    _errorObserver = observer;
+  }
 
   void configure(ErrorgapConfiguration configuration) {
     _configuration = configuration;
@@ -63,7 +81,24 @@ class ErrorgapClient {
       _configuration,
       _withTransaction(options ?? NoticeOptions()),
     );
-    return _submit('notices', notice, sync: sync);
+    void Function(String?)? observed;
+    try {
+      final errors = notice['errors'] as List<Object?>?;
+      final first = errors != null && errors.isNotEmpty
+          ? errors.first as Map<String, Object?>
+          : null;
+      observed = _errorObserver
+          ?.call('${first?['type'] ?? 'Error'}: ${first?['message'] ?? error}');
+    } catch (_) {
+      observed = null;
+    }
+    return _submit(
+      'notices',
+      notice,
+      sync: sync,
+      onDelivered:
+          observed == null ? null : (result) => observed!(_groupIdOf(result)),
+    );
   }
 
   Future<DeliveryResult> notifyTransaction(
@@ -202,16 +237,18 @@ class ErrorgapClient {
     String resource,
     Map<String, Object?> payload, {
     required bool sync,
+    void Function(DeliveryResult result)? onDelivered,
   }) {
     if (sync || !_configuration.async) {
-      return _deliver(_PendingDelivery(resource, payload));
+      return _deliver(
+          _PendingDelivery(resource, payload, onDelivered: onDelivered));
     }
     if (_queue.length >= _configuration.queueSize) {
       return Future<DeliveryResult>.value(
         DeliveryResult(error: StateError('queue full')),
       );
     }
-    _queue.add(_PendingDelivery(resource, payload));
+    _queue.add(_PendingDelivery(resource, payload, onDelivered: onDelivered));
     return Future<DeliveryResult>.value(
       DeliveryResult(status: 202, queued: true),
     );
@@ -255,10 +292,20 @@ class ErrorgapClient {
       final response = await _http
           .post(uri, headers: headers, body: jsonEncode(pending.payload))
           .timeout(Duration(seconds: _configuration.timeoutSeconds));
-      return DeliveryResult(status: response.statusCode, body: response.body);
+      return _delivered(pending,
+          DeliveryResult(status: response.statusCode, body: response.body));
     } catch (error) {
-      return DeliveryResult(error: error);
+      return _delivered(pending, DeliveryResult(error: error));
     }
+  }
+
+  DeliveryResult _delivered(_PendingDelivery pending, DeliveryResult result) {
+    try {
+      pending.onDelivered?.call(result);
+    } catch (_) {
+      // Observers never break delivery.
+    }
+    return result;
   }
 }
 
@@ -320,4 +367,17 @@ NoticeOptions _withTransaction(NoticeOptions options) {
     stackTrace: options.stackTrace,
     isFatal: options.isFatal,
   );
+}
+
+String? _groupIdOf(DeliveryResult result) {
+  final body = result.body;
+  if (body == null || body.isEmpty) return null;
+  try {
+    final parsed = jsonDecode(body);
+    return parsed is Map && parsed['group_id'] is String
+        ? parsed['group_id'] as String
+        : null;
+  } catch (_) {
+    return null;
+  }
 }

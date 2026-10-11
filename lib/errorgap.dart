@@ -30,6 +30,8 @@ import 'src/client.dart';
 import 'src/configuration.dart';
 import 'src/logger.dart';
 import 'src/notice.dart';
+import 'src/platform_environment.dart';
+import 'src/replay.dart';
 
 export 'src/apm.dart'
     show
@@ -43,6 +45,7 @@ export 'src/client.dart' show DeliveryResult, ErrorgapClient;
 export 'src/configuration.dart' show ErrorgapConfiguration;
 export 'src/logger.dart' show ErrorgapLogger;
 export 'src/notice.dart' show ErrorgapCausedBy, NoticeOptions;
+export 'src/replay.dart' show ErrorgapHttpClient, ErrorgapReplayOptions;
 export 'src/transaction_context.dart'
     show
         currentErrorgapTransactionId,
@@ -54,18 +57,50 @@ class Errorgap {
   Errorgap._();
 
   static ErrorgapClient? _client;
+  static ErrorgapReplayRecorder? _replay;
 
   /// Initialize the singleton client. Calling `init` a second time replaces
   /// the existing client (and disposes the previous one in the background).
-  static void init(ErrorgapConfiguration configuration) {
+  ///
+  /// Session replay (a timeline of the app session, no screenshots) is on by
+  /// default in iOS and Android apps and records only what the project's
+  /// replay settings allow (Settings → Session replay). Pass `replay: false`
+  /// to turn it off, or `replay: true` to record outside mobile.
+  static void init(
+    ErrorgapConfiguration configuration, {
+    bool? replay,
+    ErrorgapReplayOptions replayOptions = const ErrorgapReplayOptions(),
+  }) {
     configuration.validate();
     final previous = _client;
-    _client = ErrorgapClient(configuration);
+    _replay?.stop();
+    _replay = null;
+    final client = ErrorgapClient(configuration);
+    _client = client;
+    if (replay ?? isMobilePlatform()) {
+      final recorder = ErrorgapReplayRecorder(
+          configuration, client.httpClient, replayOptions);
+      _replay = recorder;
+      client.observeErrors(recorder.errorStarted);
+      recorder.start();
+    }
+    ErrorgapHttpClient.currentRecorder = () => _replay;
     if (previous != null) {
       // ignore: unawaited_futures
       previous.shutdown();
     }
   }
+
+  /// Record the screen now showing in the session replay timeline. Call it
+  /// from a `NavigatorObserver` (see the README).
+  static void trackScreen(String name) => _replay?.screen(name);
+
+  /// The app went to the background (`AppLifecycleListener.onHide`): ends the
+  /// replay batch, and after 30 minutes away the next session starts.
+  static void appPaused() => _replay?.paused();
+
+  /// The app is in the foreground again (`AppLifecycleListener.onShow`).
+  static void appResumed() => _replay?.resumed();
 
   static ErrorgapConfiguration? get configuration => _client?.configuration;
   static ErrorgapClient? get client => _client;
@@ -145,6 +180,8 @@ class Errorgap {
       {Duration timeout = const Duration(seconds: 5)}) {
     final c = _client;
     _client = null;
+    _replay?.stop();
+    _replay = null;
     return c?.shutdown(timeout: timeout) ?? Future<void>.value();
   }
 
