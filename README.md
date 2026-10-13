@@ -193,6 +193,11 @@ server; pass `replay: true` to record there), and records only what the
 project allows in **Settings → Session replay**: nothing while replay is off,
 and a sampled share of sessions while it is on.
 
+Only sessions that hit an error are kept. Until an error is reported, the
+session's most recent 300 events are held in memory and nothing is sent; then
+everything held goes up with the error and the rest of the session follows. A
+session that ends without an error is never sent.
+
 This package does not depend on Flutter, so wire the screens and the app
 lifecycle in your app:
 

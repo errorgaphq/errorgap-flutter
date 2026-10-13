@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 - 2026-10-13
+
+- Session replay keeps only sessions that hit an error. A session's events
+  (the newest 300) are held in memory and nothing is sent until an error is
+  reported; then everything held goes up and the rest of the session follows.
+  A session that ends without an error is never sent.
+
 ## 0.5.0 - 2026-10-11
 
 - Session replay: a timeline of each app session (app start, screens, failed
