@@ -1,1 +1,1 @@
-const String errorgapVersion = '0.5.0';
+const String errorgapVersion = '0.6.0';

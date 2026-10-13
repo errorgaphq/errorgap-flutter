@@ -108,6 +108,7 @@ void main() {
     final sent = <Sent>[];
     final r = recorder(fakeServer(sent))..start();
     await settle();
+    r.errorStarted('Error: boom')('group-3');
     r.paused();
     await settle();
     r.resumed();
@@ -133,9 +134,38 @@ void main() {
     final sent = <Sent>[];
     final r = recorder(fakeServer(sent, sessionStatus: 204))..start();
     await settle();
+    r.errorStarted('Error: boom')(null);
+    await settle();
     expect(r.recording, isFalse);
     r.screen('Home');
     await r.flush();
     expect(sent.where((s) => s.url == sessions), hasLength(1));
+  });
+
+  test('sends nothing for a session without an error', () async {
+    final sent = <Sent>[];
+    final r = recorder(fakeServer(sent))..start();
+    await settle();
+    r.screen('Checkout');
+    r.paused();
+    await r.flush(finalBatch: true);
+    await settle();
+    expect(sent.where((s) => s.url == sessions), isEmpty);
+  });
+
+  test('holds only the most recent events before an error', () async {
+    final sent = <Sent>[];
+    final r = recorder(fakeServer(sent))..start();
+    await settle();
+    for (var i = 0; i < replayMaxPendingEvents + 20; i++) {
+      r.screen('Screen $i');
+    }
+    r.errorStarted('Error: boom')(null);
+    await settle();
+
+    final before = events(sent).where((e) => e['type'] != 'error').toList();
+    expect(before, hasLength(replayMaxPendingEvents));
+    // "App started" plus 320 screens: the oldest 21 are dropped.
+    expect(before.first['label'], 'Opened Screen 20');
   });
 }

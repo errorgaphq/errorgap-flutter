@@ -34,6 +34,9 @@ class ErrorgapReplayOptions {
 const Duration replayBackgroundTimeout = Duration(minutes: 30);
 const int replayMaxBatchEvents = 200;
 const int _maxBufferedEvents = 1000;
+
+/// Before the session's first error, only the most recent events are held.
+const int replayMaxPendingEvents = 300;
 const int _maxLabel = 200;
 
 enum _State { pending, recording, skipped, stopped }
@@ -131,8 +134,11 @@ class ErrorgapReplayRecorder {
         '${method.toUpperCase()} $shown → ${status == 0 ? 'failed' : status}');
   }
 
+  /// Sends what is recorded, once the session has an error. Only sessions
+  /// that hit an error are kept: until then events are held and nothing is
+  /// sent, and a session that ends without one is never sent.
   Future<void> flush({bool finalBatch = false}) async {
-    if (_state != _State.recording) return;
+    if (_state != _State.recording || !_hadError) return;
     var last = finalBatch;
     do {
       final batch = _events.take(replayMaxBatchEvents).toList();
@@ -194,7 +200,12 @@ class ErrorgapReplayRecorder {
   }
 
   void _push(String type, String label, {int? t, String? groupId}) {
-    if (!_active || _events.length >= _maxBufferedEvents) return;
+    if (!_active) return;
+    // Before an error, the recent past matters most: drop the oldest.
+    if (!_hadError && _events.length >= replayMaxPendingEvents) {
+      _events.removeAt(0);
+    }
+    if (_events.length >= _maxBufferedEvents) return;
     _events.add(<String, Object?>{
       't': t ?? _offset(),
       'type': type,
