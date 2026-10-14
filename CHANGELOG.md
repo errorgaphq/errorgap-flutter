@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.1 - 2026-10-13
+
+First published release of the 0.7 changes (0.7.0 was tagged but not
+published: the changelog entry was missing).
+
+- `beforeNotify`: see each notice before it is sent and return it, changed or
+  not, or `null` to drop it. A hook that throws is skipped.
+- Rate limits: after a 429 or 503 the client stops sending for the server's
+  `Retry-After` (`client.paused`, `RateLimitedException`).
+- Remote settings: errors, performance data and logs can each be switched off
+  for a project in Errorgap (Project settings › What SDKs send) and installed
+  apps follow within ten minutes of running. Fails open.
+  `remoteSettings: false` ignores the project's switches.
+- `filterKeys` are applied to the session as well as params.
+
 ## 0.6.0 - 2026-10-13
 
 - Session replay keeps only sessions that hit an error. A session's events
