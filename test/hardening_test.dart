@@ -9,6 +9,15 @@ Future<(HttpServer, List<Map<String, Object?>>)> stub(int status) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   final bodies = <Map<String, Object?>>[];
   server.listen((HttpRequest request) async {
+    // The SDK's settings poll is not an ingest request: no settings here,
+    // and nothing recorded.
+    if (request.method == 'GET' &&
+        request.uri.path.endsWith('/config') &&
+        !request.uri.path.endsWith('/sessions/config')) {
+      request.response.statusCode = 404;
+      await request.response.close();
+      return;
+    }
     final raw = await utf8.decoder.bind(request).join();
     bodies.add(jsonDecode(raw) as Map<String, Object?>);
     request.response.statusCode = status;

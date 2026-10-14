@@ -35,6 +35,7 @@ class ErrorgapConfiguration {
     this.timeoutSeconds = 5,
     this.queueSize = 100,
     this.beforeNotify,
+    bool? remoteSettings,
     Map<String, Object?>? deviceInfo,
     List<String>? applicationPackages,
     Map<String, String>? packageSourceRoots,
@@ -56,6 +57,8 @@ class ErrorgapConfiguration {
         minimumLogLevel =
             minimumLogLevel ?? _env('ERRORGAP_MINIMUM_LOG_LEVEL') ?? 'info',
         sourceContextEnabled = sourceContextEnabled ?? true,
+        remoteSettings =
+            remoteSettings ?? _envBool('ERRORGAP_REMOTE_SETTINGS') ?? true,
         deviceInfo = deviceInfo ?? <String, Object?>{},
         applicationPackages = applicationPackages ?? <String>[],
         packageSourceRoots = packageSourceRoots ?? <String, String>{} {
@@ -81,6 +84,10 @@ class ErrorgapConfiguration {
   bool sourceContextEnabled;
   int timeoutSeconds;
   int queueSize;
+
+  /// Follow the project's settings in errorgap (Project settings › What SDKs
+  /// send): stop sending what is switched off there. On by default.
+  final bool remoteSettings;
 
   /// Sees each notice before it is sent; return `null` to drop it.
   final BeforeNotify? beforeNotify;

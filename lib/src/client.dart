@@ -238,6 +238,7 @@ class ErrorgapClient {
   Future<void> shutdown({Duration timeout = const Duration(seconds: 5)}) async {
     await flush(timeout: timeout);
     if (!_shutdown.isCompleted) _shutdown.complete();
+    _remoteTimer?.cancel();
     await _worker;
     _http.close();
   }
@@ -262,6 +263,10 @@ class ErrorgapClient {
     required bool sync,
     void Function(DeliveryResult result)? onDelivered,
   }) {
+    if (!remoteEnabled(resource)) {
+      return Future<DeliveryResult>.value(
+          DeliveryResult(status: 204, body: 'switched off for this project'));
+    }
     if (sync || !_configuration.async) {
       return _deliver(
           _PendingDelivery(resource, payload, onDelivered: onDelivered));
@@ -290,6 +295,77 @@ class ErrorgapClient {
       } finally {
         _inFlight--;
       }
+    }
+  }
+
+  // The project's remote settings (Project settings › What SDKs send in
+  // errorgap): errors, performance data or logs can be switched off there and
+  // installed apps follow within a poll interval, with no new release. Until
+  // the first answer, and whenever errorgap cannot be reached, everything
+  // stays on.
+  static const Map<String, String> _remoteFields = <String, String>{
+    'notices': 'errors_enabled',
+    'transactions': 'apm_enabled',
+    'logs': 'logs_enabled',
+  };
+  Set<String> _remoteOff = <String>{};
+  Duration _remoteInterval = const Duration(seconds: 600);
+  Timer? _remoteTimer;
+  bool _remotePolling = false;
+
+  /// False only when errorgap has said to stop sending this kind of payload.
+  bool remoteEnabled(String resource) {
+    final field = _remoteFields[resource];
+    if (!_configuration.remoteSettings || field == null) return true;
+    if (!_remotePolling) {
+      _remotePolling = true;
+      unawaited(_pollRemoteSettings());
+    }
+    return !_remoteOff.contains(field);
+  }
+
+  Future<void> _pollRemoteSettings() async {
+    await refreshRemoteSettings();
+    if (_shutdown.isCompleted) return;
+    _remoteTimer =
+        Timer(_remoteInterval, () => unawaited(_pollRemoteSettings()));
+  }
+
+  /// Fetch the project's remote settings now. Returns whether they could be
+  /// read; a failure leaves the last known settings in place.
+  Future<bool> refreshRemoteSettings() async {
+    try {
+      final base = _configuration.endpoint.endsWith('/')
+          ? _configuration.endpoint
+              .substring(0, _configuration.endpoint.length - 1)
+          : _configuration.endpoint;
+      final headers = <String, String>{
+        'user-agent': 'errorgap-flutter/$errorgapVersion',
+      };
+      final apiKey = _configuration.apiKey;
+      if (apiKey != null && apiKey.isNotEmpty) {
+        headers['x-errorgap-project-key'] = apiKey;
+      }
+      final response = await _http
+          .get(
+            Uri.parse(
+                '$base/api/projects/${_configuration.projectSlug}/config'),
+            headers: headers,
+          )
+          .timeout(Duration(seconds: _configuration.timeoutSeconds));
+      if (response.statusCode != 200) return false;
+      final body = jsonDecode(response.body);
+      if (body is! Map) return false;
+      // An absent field means on.
+      _remoteOff = _remoteFields.values
+          .where((String field) => body[field] == false)
+          .toSet();
+      final seconds = body['poll_interval_seconds'];
+      _remoteInterval =
+          Duration(seconds: seconds is int && seconds >= 60 ? seconds : 600);
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
