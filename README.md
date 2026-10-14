@@ -72,6 +72,26 @@ try {
 `notify` returns a `DeliveryResult` (`status`, `body`, `error`, `queued`).
 The SDK never throws.
 
+## Remote settings
+
+Errors, performance data and logs can each be switched off for a project in
+errorgap (Project settings › What SDKs send). Installed apps follow within ten
+minutes of running, with no new release. If errorgap cannot be reached,
+everything stays on. `remoteSettings: false` ignores the project's switches.
+
+## Hooks, filtering and rate limits
+
+```dart
+ErrorgapConfiguration(
+  projectSlug: 'my-app',
+  // return null to drop a notice, or return it changed
+  beforeNotify: (notice) => notice,
+);
+```
+
+`filterKeys` are masked at any depth in `params` and `session`. After a 429 the
+client stops sending for the server's `Retry-After` (`client.paused`).
+
 ## Source excerpts
 
 The SDK reads a bounded source window for file-backed Dart VM frames. Package

@@ -23,6 +23,15 @@ class DeliveryResult {
       error == null && status != null && status! >= 200 && status! < 300;
 }
 
+/// Not sent: the server asked for a pause (`Retry-After`) that has not
+/// passed yet.
+class RateLimitedException implements Exception {
+  const RateLimitedException();
+
+  @override
+  String toString() => 'errorgap: rate limited by the server, not sent';
+}
+
 class _PendingDelivery {
   _PendingDelivery(this.resource, this.payload, {this.onDelivered});
 
@@ -76,11 +85,25 @@ class ErrorgapClient {
     if (validation != null) return validation;
     if (_configuration.isIgnoredEnvironment) return _ignored();
 
-    final notice = buildNotice(
+    var notice = buildNotice(
       error,
       _configuration,
       _withTransaction(options ?? NoticeOptions()),
     );
+    // A hook that throws is skipped: a bug in a filter must not lose the
+    // error it was filtering.
+    final hook = _configuration.beforeNotify;
+    if (hook != null) {
+      try {
+        final hooked = hook(notice);
+        if (hooked == null) {
+          return DeliveryResult(status: 202, body: 'dropped by beforeNotify');
+        }
+        notice = hooked;
+      } catch (_) {
+        // keep the notice as built
+      }
+    }
     void Function(String?)? observed;
     try {
       final errors = notice['errors'] as List<Object?>?;
@@ -215,6 +238,7 @@ class ErrorgapClient {
   Future<void> shutdown({Duration timeout = const Duration(seconds: 5)}) async {
     await flush(timeout: timeout);
     if (!_shutdown.isCompleted) _shutdown.complete();
+    _remoteTimer?.cancel();
     await _worker;
     _http.close();
   }
@@ -239,6 +263,10 @@ class ErrorgapClient {
     required bool sync,
     void Function(DeliveryResult result)? onDelivered,
   }) {
+    if (!remoteEnabled(resource)) {
+      return Future<DeliveryResult>.value(
+          DeliveryResult(status: 204, body: 'switched off for this project'));
+    }
     if (sync || !_configuration.async) {
       return _deliver(
           _PendingDelivery(resource, payload, onDelivered: onDelivered));
@@ -270,7 +298,94 @@ class ErrorgapClient {
     }
   }
 
+  // The project's remote settings (Project settings › What SDKs send in
+  // errorgap): errors, performance data or logs can be switched off there and
+  // installed apps follow within a poll interval, with no new release. Until
+  // the first answer, and whenever errorgap cannot be reached, everything
+  // stays on.
+  static const Map<String, String> _remoteFields = <String, String>{
+    'notices': 'errors_enabled',
+    'transactions': 'apm_enabled',
+    'logs': 'logs_enabled',
+  };
+  Set<String> _remoteOff = <String>{};
+  Duration _remoteInterval = const Duration(seconds: 600);
+  Timer? _remoteTimer;
+  bool _remotePolling = false;
+
+  /// False only when errorgap has said to stop sending this kind of payload.
+  bool remoteEnabled(String resource) {
+    final field = _remoteFields[resource];
+    if (!_configuration.remoteSettings || field == null) return true;
+    if (!_remotePolling) {
+      _remotePolling = true;
+      unawaited(_pollRemoteSettings());
+    }
+    return !_remoteOff.contains(field);
+  }
+
+  Future<void> _pollRemoteSettings() async {
+    await refreshRemoteSettings();
+    if (_shutdown.isCompleted) return;
+    _remoteTimer =
+        Timer(_remoteInterval, () => unawaited(_pollRemoteSettings()));
+  }
+
+  /// Fetch the project's remote settings now. Returns whether they could be
+  /// read; a failure leaves the last known settings in place.
+  Future<bool> refreshRemoteSettings() async {
+    try {
+      final base = _configuration.endpoint.endsWith('/')
+          ? _configuration.endpoint
+              .substring(0, _configuration.endpoint.length - 1)
+          : _configuration.endpoint;
+      final headers = <String, String>{
+        'user-agent': 'errorgap-flutter/$errorgapVersion',
+      };
+      final apiKey = _configuration.apiKey;
+      if (apiKey != null && apiKey.isNotEmpty) {
+        headers['x-errorgap-project-key'] = apiKey;
+      }
+      final response = await _http
+          .get(
+            Uri.parse(
+                '$base/api/projects/${_configuration.projectSlug}/config'),
+            headers: headers,
+          )
+          .timeout(Duration(seconds: _configuration.timeoutSeconds));
+      if (response.statusCode != 200) return false;
+      final body = jsonDecode(response.body);
+      if (body is! Map) return false;
+      // An absent field means on.
+      _remoteOff = _remoteFields.values
+          .where((String field) => body[field] == false)
+          .toSet();
+      final seconds = body['poll_interval_seconds'];
+      _remoteInterval =
+          Duration(seconds: seconds is int && seconds >= 60 ? seconds : 600);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  DateTime _pausedUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// True while delivery is paused at the server's request (a 429 or 503
+  /// with `Retry-After`).
+  bool get paused => DateTime.now().isBefore(_pausedUntil);
+
+  void _pauseFor(String? header) {
+    final parsed = int.tryParse((header ?? '').trim()) ?? 60;
+    final seconds = parsed < 1 ? 1 : (parsed > 300 ? 300 : parsed);
+    _pausedUntil = DateTime.now().add(Duration(seconds: seconds));
+  }
+
   Future<DeliveryResult> _deliver(_PendingDelivery pending) async {
+    if (paused) {
+      return _delivered(
+          pending, DeliveryResult(error: const RateLimitedException()));
+    }
     final base = _configuration.endpoint.endsWith('/')
         ? _configuration.endpoint
             .substring(0, _configuration.endpoint.length - 1)
@@ -292,6 +407,9 @@ class ErrorgapClient {
       final response = await _http
           .post(uri, headers: headers, body: jsonEncode(pending.payload))
           .timeout(Duration(seconds: _configuration.timeoutSeconds));
+      if (response.statusCode == 429 || response.statusCode == 503) {
+        _pauseFor(response.headers['retry-after']);
+      }
       return _delivered(pending,
           DeliveryResult(status: response.statusCode, body: response.body));
     } catch (error) {

@@ -41,8 +41,9 @@ export 'src/apm.dart'
         ErrorgapTransaction,
         errorgapTraceHeader,
         normalizeSql;
-export 'src/client.dart' show DeliveryResult, ErrorgapClient;
-export 'src/configuration.dart' show ErrorgapConfiguration;
+export 'src/client.dart'
+    show DeliveryResult, ErrorgapClient, RateLimitedException;
+export 'src/configuration.dart' show BeforeNotify, ErrorgapConfiguration;
 export 'src/logger.dart' show ErrorgapLogger;
 export 'src/notice.dart' show ErrorgapCausedBy, NoticeOptions;
 export 'src/replay.dart' show ErrorgapHttpClient, ErrorgapReplayOptions;

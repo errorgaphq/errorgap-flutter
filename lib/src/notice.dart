@@ -93,7 +93,7 @@ Map<String, Object?> buildNotice(
     'errors': <Map<String, Object?>>[errorEntry],
     'context': defaultContext,
     'environment': defaultEnvironment,
-    'session': options.session ?? <String, Object?>{},
+    'session': filterParams(options.session, config.filterKeys),
     'params': filterParams(options.params, config.filterKeys),
   };
   if (config.projectId != null) {
